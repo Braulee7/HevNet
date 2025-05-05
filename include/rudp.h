@@ -9,13 +9,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-class Rudp {
+namespace Hev {
+class TBD {
 public:
-  Rudp(const char *local_addr, const int local_port, const char *peer_ip,
-       const int peer_port);
-  ~Rudp();
+  TBD(const char *local_addr, const int local_port, const char *peer_ip,
+      const int peer_port);
+  ~TBD();
   const int Connect();
-  const int Send(std::unique_ptr<uint8_t[]> buffer, const size_t buffer_len);
+  const int Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len);
   std::unique_ptr<uint8_t[]> Receive();
 
 private:
@@ -23,3 +24,4 @@ private:
   sockaddr_in m_local_addr;
   sockaddr_in m_peer_addr;
 };
+} // namespace Hev

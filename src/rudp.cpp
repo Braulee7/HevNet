@@ -5,9 +5,9 @@
 #include <sys/socket.h>
 
 #define BUFFER_LEN 256
-
-Rudp::Rudp(const char *local_addr, const int local_port, const char *peer_ip,
-           const int peer_port) {
+namespace Hev {
+TBD::TBD(const char *local_addr, const int local_port, const char *peer_ip,
+         const int peer_port) {
   // set up local socket info where we'll be listening from
   m_sock = socket(AF_INET, SOCK_DGRAM, 0);
   m_local_addr.sin_addr.s_addr = INADDR_ANY;
@@ -19,21 +19,21 @@ Rudp::Rudp(const char *local_addr, const int local_port, const char *peer_ip,
   inet_pton(AF_INET, peer_ip, &m_peer_addr.sin_addr);
 }
 
-Rudp::~Rudp() {
+TBD::~TBD() {
   // shouldn't overwrite the standard fds
   if (m_sock > 2)
     close(m_sock);
 }
 
-const int Rudp::Connect() {
+const int TBD::Connect() {
   if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
     return -1;
   }
   return 0;
 }
 
-const int Rudp::Send(std::unique_ptr<uint8_t[]> buffer,
-                     const size_t buffer_len) {
+const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer,
+                    const size_t buffer_len) {
   // TODO: build packet
   const int status =
       sendto(m_sock, buffer.get(), buffer_len, 0,
@@ -41,7 +41,7 @@ const int Rudp::Send(std::unique_ptr<uint8_t[]> buffer,
   return status;
 }
 
-std::unique_ptr<uint8_t[]> Rudp::Receive() {
+std::unique_ptr<uint8_t[]> TBD::Receive() {
   size_t received_len = 0;
   std::unique_ptr<uint8_t[]> buffer = std::make_unique<uint8_t[]>(BUFFER_LEN);
   sockaddr_in received_addr;
@@ -60,3 +60,4 @@ std::unique_ptr<uint8_t[]> Rudp::Receive() {
   }
   return buffer;
 }
+} // namespace Hev
