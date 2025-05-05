@@ -1,0 +1,8 @@
+[
+{
+  "directory": "/home/braulee/Documents/cpp-projects/hev-net/build",
+  "command": "/usr/bin/g++  -I/home/braulee/Documents/cpp-projects/hev-net/src -I/home/braulee/Documents/cpp-projects/hev-net/include -g -o CMakeFiles/HevNet.dir/src/rudp.cpp.o -c /home/braulee/Documents/cpp-projects/hev-net/src/rudp.cpp",
+  "file": "/home/braulee/Documents/cpp-projects/hev-net/src/rudp.cpp",
+  "output": "CMakeFiles/HevNet.dir/src/rudp.cpp.o"
+}
+]
