@@ -1,3 +1,0 @@
-/home/braulee/Documents/cpp-projects/hev-net/build/CMakeFiles/HevNet.dir
-/home/braulee/Documents/cpp-projects/hev-net/build/CMakeFiles/edit_cache.dir
-/home/braulee/Documents/cpp-projects/hev-net/build/CMakeFiles/rebuild_cache.dir

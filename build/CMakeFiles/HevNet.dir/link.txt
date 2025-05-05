@@ -1,2 +1,0 @@
-/usr/bin/ar qc libHevNetd.a CMakeFiles/HevNet.dir/src/rudp.cpp.o
-/usr/bin/ranlib libHevNetd.a
