@@ -7,10 +7,12 @@ add_library(${PROJECT_NAME} STATIC)
 
 set(sources 
 	${PROJECT_SOURCE_DIR}/src/rudp.cpp
+	${PROJECT_SOURCE_DIR}/src/packet.cpp
 )
 
 set(headers 
 	${PROJECT_SOURCE_DIR}/include/rudp.h
+	${PROJECT_SOURCE_DIR}/include/packet.h
 )
 
 target_sources(${PROJECT_NAME}

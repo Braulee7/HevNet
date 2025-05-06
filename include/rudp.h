@@ -1,3 +1,4 @@
+#pragma once
 #include <arpa/inet.h>
 #include <cstdint>
 #include <memory.h>
@@ -9,6 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "packet.h"
+
 namespace Hev {
 class TBD {
 public:
@@ -16,12 +19,15 @@ public:
       const int peer_port);
   ~TBD();
   const int Connect();
-  const int Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len);
+  const int Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
+                 const uint8_t type = PacketType::MSG);
   std::unique_ptr<uint8_t[]> Receive();
 
 private:
   int m_sock;
   sockaddr_in m_local_addr;
   sockaddr_in m_peer_addr;
+
+  uint32_t m_sequence;
 };
 } // namespace Hev
