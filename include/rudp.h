@@ -24,6 +24,11 @@ public:
   std::unique_ptr<uint8_t[]> Receive();
 
 private:
+  std::unique_ptr<uint8_t[]> ProcessPacket(TBPacket &received_packet,
+                                           sockaddr_in &received_addr);
+  void AckPacket(uint32_t sequence);
+
+private:
   int m_sock;
   sockaddr_in m_local_addr;
   sockaddr_in m_peer_addr;
