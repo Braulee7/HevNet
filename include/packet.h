@@ -5,6 +5,8 @@
 #include <memory>
 
 namespace Hev {
+using Buffer = std::unique_ptr<uint8_t[]>;
+
 struct PacketType {
   static const uint16_t ACK = 0x01;
   static const uint16_t PING = 0x02;
@@ -19,12 +21,11 @@ struct TBHeader {
 
 struct TBPacket {
   TBHeader header;
-  std::unique_ptr<uint8_t[]> payload;
+  Buffer payload;
 };
 
-std::pair<std::unique_ptr<uint8_t[]>, size_t>
-BuildPacket(uint32_t type, uint32_t sequence,
-            std::unique_ptr<uint8_t[]> &payload, uint32_t payload_len);
+std::pair<Buffer, size_t> BuildPacket(uint32_t type, uint32_t sequence,
+                                      Buffer &payload, uint32_t payload_len);
 
-TBPacket RebuildPacket(std::unique_ptr<uint8_t[]> buffer);
+TBPacket RebuildPacket(Buffer buffer);
 } // namespace Hev

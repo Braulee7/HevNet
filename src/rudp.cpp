@@ -30,6 +30,13 @@ TBD::~TBD() {
     close(m_sock);
 }
 
+const int TBD::Listen() {
+  // send a SYN and await for the peer to ack it
+  if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
+    return -1;
+  }
+}
+
 const int TBD::Connect() {
   if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
     return -1;
@@ -46,13 +53,12 @@ const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
   return status;
 }
 
-std::unique_ptr<uint8_t[]> TBD::Receive() {
-  std::unique_ptr<uint8_t[]> payload = nullptr;
+Buffer TBD::Receive() {
+  Buffer payload = nullptr;
 
   while (!payload) {
     TBPacket received_packet = {};
-    std::unique_ptr<uint8_t[]> buffer =
-        std::make_unique<uint8_t[]>(MAX_BUFFER_LEN);
+    Buffer buffer = std::make_unique<uint8_t[]>(MAX_BUFFER_LEN);
     size_t received_len = 0;
     sockaddr_in received_addr;
     socklen_t received_addr_len = sizeof(received_addr);
@@ -71,8 +77,8 @@ std::unique_ptr<uint8_t[]> TBD::Receive() {
   return std::move(payload);
 }
 
-std::unique_ptr<uint8_t[]> TBD::ProcessPacket(TBPacket &received_packet,
-                                              sockaddr_in &received_addr) {
+Buffer TBD::ProcessPacket(TBPacket &received_packet,
+                          sockaddr_in &received_addr) {
   const uint32_t received_seq = received_packet.header.sequence;
   const uint16_t packet_type = received_packet.header.type;
 
@@ -107,7 +113,7 @@ void TBD::AckPacket(uint32_t sequence) {
   // update our sequence to this so we know where we are
   m_sequence = sequence;
   // payload will be emppty
-  std::unique_ptr<uint8_t[]> empty_load;
+  Buffer empty_load;
   if (Send(empty_load, 0, PacketType::ACK) < 0) {
     // TODO: HANDLE
   }

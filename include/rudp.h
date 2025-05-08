@@ -2,7 +2,6 @@
 #include <arpa/inet.h>
 #include <cstdint>
 #include <memory.h>
-#include <memory>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,14 +17,18 @@ public:
   TBD(const char *local_addr, const int local_port, const char *peer_ip,
       const int peer_port);
   ~TBD();
+  // Await for your peer to connect to you, essentially you invite a peer
+  // and await for them acknowledge your invitation
+  const int Listen();
+  // Join your peer which has sent you an invitation already to join
+  // their circle
   const int Connect();
-  const int Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
+  const int Send(Buffer &buffer, const size_t buffer_len,
                  const uint8_t type = PacketType::MSG);
-  std::unique_ptr<uint8_t[]> Receive();
+  Buffer Receive();
 
 private:
-  std::unique_ptr<uint8_t[]> ProcessPacket(TBPacket &received_packet,
-                                           sockaddr_in &received_addr);
+  Buffer ProcessPacket(TBPacket &received_packet, sockaddr_in &received_addr);
   void AckPacket(uint32_t sequence);
 
 private:
