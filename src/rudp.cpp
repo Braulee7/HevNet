@@ -1,9 +1,10 @@
 #include "rudp.h"
+#include "errors.h"
 #include "packet.h"
-#include <cstdint>
+#include <bits/types/struct_timeval.h>
 #include <cstring>
-#include <memory>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 
 #define MAX_BUFFER_LEN 2048
@@ -31,17 +32,66 @@ TBD::~TBD() {
 }
 
 const int TBD::Listen() {
-  // send a SYN and await for the peer to ack it
+  // wait for a syn then send a a syn back
   if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
     return -1;
   }
-}
+  Buffer empty_buffer;
+  bool acked = false;
+  int times = 6;
+  while (!acked && times > 0) {
+    TBPacket received_packet = {};
+    sockaddr_in received_addr = {};
+    int status = 0;
+    times--;
+    if ((status = RetrievePacket(received_packet, &received_addr)) != 0) {
+      continue;
+    }
+    if (received_addr.sin_addr.s_addr != m_peer_addr.sin_addr.s_addr) {
+      continue;
+    }
+    if (received_packet.header.type == PacketType::SYN) {
+      m_sequence = received_packet.header.sequence;
+      Send(empty_buffer, 0, PacketType::SYN);
+      acked = true;
+    }
+  }
+  return acked ? 0 : -1;
+} // namespace Hev
 
+// bind socket, wait for SYN then send a SYN back and wait for the ACK
 const int TBD::Connect() {
+
   if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
     return -1;
   }
-  return 0;
+  Buffer empty_buffer;
+  int status = 0;
+  if ((status = Send(empty_buffer, 0, PacketType::SYN)) < 0) {
+    return status;
+  }
+  bool acked = false;
+  int times = 6;
+  while (!acked && times > 0) {
+    TBPacket received_packet = {};
+    sockaddr_in received_addr;
+    if ((status = RetrievePacket(received_packet, &received_addr)) != 0) {
+      times--;
+      continue;
+    }
+    if (received_addr.sin_addr.s_addr != m_peer_addr.sin_addr.s_addr) {
+      times--;
+      continue;
+    }
+    if (received_packet.header.type == PacketType::SYN) {
+      m_sequence = received_packet.header.sequence;
+      AckPacket(m_sequence);
+      acked = true;
+    }
+    times--;
+  }
+
+  return acked ? 0 : -1;
 }
 
 const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
@@ -58,23 +108,49 @@ Buffer TBD::Receive() {
 
   while (!payload) {
     TBPacket received_packet = {};
-    Buffer buffer = std::make_unique<uint8_t[]>(MAX_BUFFER_LEN);
-    size_t received_len = 0;
-    sockaddr_in received_addr;
-    socklen_t received_addr_len = sizeof(received_addr);
-
-    received_len = recvfrom(m_sock, (uint8_t *)buffer.get(), MAX_BUFFER_LEN, 0,
-                            (sockaddr *)&received_addr, &received_addr_len);
-    // got nothing
-    if (received_len < 0) {
+    sockaddr_in received_addr = {};
+    if (RetrievePacket(received_packet, &received_addr) != 0) {
       return nullptr;
     }
-    received_packet = RebuildPacket(std::move(buffer));
-
     // TODO: process the payload according to type
     payload = ProcessPacket(received_packet, received_addr);
   }
   return std::move(payload);
+}
+
+const int TBD::RetrievePacket(TBPacket &packet, sockaddr_in *_received_addr) {
+  TBPacket received_packet = {};
+  Buffer buffer = std::make_unique<uint8_t[]>(MAX_BUFFER_LEN);
+  size_t received_len = 0;
+  sockaddr_in received_addr;
+  socklen_t received_addr_len = sizeof(received_addr);
+  // setup the timeout
+  fd_set read_fds;
+  int select_ret = 0;
+  timeval tv;
+  tv.tv_sec = 15;
+  tv.tv_usec = 0;
+  FD_ZERO(&read_fds);
+  FD_SET(m_sock, &read_fds);
+
+  select_ret = select(m_sock + 1, &read_fds, NULL, NULL, &tv);
+
+  if (select_ret == 0) {
+    return TIMEOUT;
+  } else if (select_ret < 1) {
+    return -1;
+  }
+  received_len = recvfrom(m_sock, (uint8_t *)buffer.get(), MAX_BUFFER_LEN, 0,
+                          (sockaddr *)&received_addr, &received_addr_len);
+  // got nothing
+  if (received_len < 0) {
+    return -1;
+  }
+  packet = RebuildPacket(std::move(buffer));
+  if (_received_addr) {
+    *(_received_addr) = received_addr;
+  }
+  return 0;
 }
 
 Buffer TBD::ProcessPacket(TBPacket &received_packet,
