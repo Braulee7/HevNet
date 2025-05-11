@@ -10,9 +10,9 @@ using Buffer = std::unique_ptr<uint8_t[]>;
 struct PacketType {
   static const uint16_t SYN = 0x01;
   static const uint16_t ACK = 0x02;
-  static const uint16_t PING = 0x03;
-  static const uint16_t MSG = 0x04;
   static const uint16_t SYNACK = SYN | ACK;
+  static const uint16_t PING = 0x04;
+  static const uint16_t MSG = 0x08;
 };
 
 struct TBHeader {

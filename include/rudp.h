@@ -1,19 +1,15 @@
 #pragma once
 #include <arpa/inet.h>
-#include <bits/types/struct_timeval.h>
 #include <cstdint>
 #include <memory.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <unordered_map>
 
 #include "packet.h"
-#include "timer.h"
 
 namespace Hev {
 class TBD {
@@ -34,9 +30,11 @@ public:
 private:
   const int Send(Buffer &buffer, const size_t buffer_len, uint32_t sequence,
                  const uint8_t type);
-  const int RetrievePacket(TBPacket &packet, sockaddr_in *received_addr);
-  Buffer ProcessPacket(TBPacket &received_packet, sockaddr_in &received_addr);
   void AckPacket(uint32_t sequence, uint32_t length);
+  const int RetrievePacket(TBPacket &packet, sockaddr_in *received_addr);
+  const bool ProcessPacket(TBPacket &received_packet,
+                           sockaddr_in &received_addr,
+                           Buffer *retrieved_buffer);
 
 private:
   int m_sock;
@@ -44,9 +42,5 @@ private:
   sockaddr_in m_peer_addr;
 
   uint32_t m_sequence;
-  Timeout m_timeout;
-
-  // acking map
-  std::unordered_map<uint32_t, Buffer> m_unacked_packs;
 };
 } // namespace Hev
