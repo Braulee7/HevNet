@@ -42,5 +42,8 @@ private:
   sockaddr_in m_peer_addr;
 
   uint32_t m_sequence;
+  bool m_connected;
+  // maximum tries for sending a packet before giving up
+  static const uint8_t MAX_TRIES = 10;
 };
 } // namespace Hev

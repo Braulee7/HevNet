@@ -4,7 +4,6 @@
 #include <bits/types/struct_timeval.h>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -13,7 +12,7 @@
 namespace Hev {
 TBD::TBD(const char *local_addr, const int local_port, const char *peer_ip,
          const int peer_port)
-    : m_sequence(0) {
+    : m_sequence(0), m_connected(false) {
   // set up local socket info where we'll be listening from
   m_sock = socket(AF_INET, SOCK_DGRAM, 0);
   m_local_addr.sin_addr.s_addr = INADDR_ANY;
@@ -49,17 +48,18 @@ const int TBD::Listen() {
     if ((status = RetrievePacket(received_packet, &received_addr)) != 0) {
       continue;
     }
-    if (received_addr.sin_addr.s_addr != m_peer_addr.sin_addr.s_addr) {
-      continue;
-    }
-    if (received_packet.header.type == PacketType::SYN) {
+    if (ProcessPacket(received_packet, received_addr, nullptr)) {
       m_sequence = received_packet.header.sequence;
       Send(empty_buffer, 0, PacketType::SYNACK);
       acked = true;
     }
   }
-  std::cout << m_sequence << std::endl;
-  return acked ? 0 : -1;
+  if (acked) {
+    m_connected = true;
+    return 0;
+  } else {
+    return -1;
+  }
 }
 // bind socket, wait for SYN then send a SYN back and wait for the ACK
 const int TBD::Connect() {
@@ -75,8 +75,7 @@ const int TBD::Connect() {
     return status;
   }
   AckPacket(0, 1);
-
-  std::cout << m_sequence << std::endl;
+  m_connected = true;
   return 0;
 }
 
@@ -89,7 +88,8 @@ const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
   auto [packet, packet_len] = BuildPacket(type, sequence, buffer, buffer_len);
   bool acked = false;
   int status = -1;
-  while (!acked) {
+  uint8_t total_tries = 0;
+  while (!acked && ++total_tries < MAX_TRIES) {
     status = sendto(m_sock, packet.get(), packet_len, 0,
                     (const sockaddr *)&m_peer_addr, sizeof(m_peer_addr));
     // wait for an ack
@@ -107,7 +107,8 @@ const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
 
 Buffer TBD::Receive() {
   Buffer payload = nullptr;
-  while (!payload) {
+  uint8_t total_tries = 0;
+  while (!payload && ++total_tries < MAX_TRIES) {
     TBPacket received_packet = {};
     sockaddr_in received_addr = {};
     if (RetrievePacket(received_packet, &received_addr) != 0) {
@@ -165,7 +166,7 @@ const bool TBD::ProcessPacket(TBPacket &received_packet,
     return false;
   }
 
-  if (packet_type & PacketType::ACK) {
+  if (packet_type & PacketType::SYNACK) {
     return true;
   }
   // any other message we acknowledge it and return teh payload
