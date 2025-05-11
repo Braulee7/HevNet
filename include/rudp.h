@@ -30,9 +30,11 @@ public:
   Buffer Receive();
 
 private:
+  const int Send(Buffer &buffer, const size_t buffer_len, uint32_t sequence,
+                 const uint8_t type);
   const int RetrievePacket(TBPacket &packet, sockaddr_in *received_addr);
   Buffer ProcessPacket(TBPacket &received_packet, sockaddr_in &received_addr);
-  void AckPacket(uint32_t sequence);
+  void AckPacket(uint32_t sequence, uint32_t length);
 
 private:
   int m_sock;

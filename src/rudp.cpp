@@ -2,7 +2,9 @@
 #include "errors.h"
 #include "packet.h"
 #include <bits/types/struct_timeval.h>
+#include <cstdint>
 #include <cstring>
+#include <execution>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -52,7 +54,8 @@ const int TBD::Listen() {
     }
     if (received_packet.header.type == PacketType::SYN) {
       m_sequence = received_packet.header.sequence;
-      Send(empty_buffer, 0, PacketType::SYN);
+      Send(empty_buffer, 0, m_sequence + 1, PacketType::SYNACK);
+      // TODO: set up listener thread
       acked = true;
     }
   }
@@ -67,6 +70,7 @@ const int TBD::Connect() {
   }
   Buffer empty_buffer;
   int status = 0;
+  m_sequence = 1;
   if ((status = Send(empty_buffer, 0, PacketType::SYN)) < 0) {
     return status;
   }
@@ -83,9 +87,8 @@ const int TBD::Connect() {
       times--;
       continue;
     }
-    if (received_packet.header.type == PacketType::SYN) {
-      m_sequence = received_packet.header.sequence;
-      AckPacket(m_sequence);
+    if (received_packet.header.type == PacketType::SYNACK) {
+      AckPacket(received_packet.header.sequence, 1);
       acked = true;
     }
     times--;
@@ -94,9 +97,13 @@ const int TBD::Connect() {
   return acked ? 0 : -1;
 }
 
+const int TBD::Send(Buffer &buffer, const size_t buffer_len, uint8_t type) {
+  return Send(buffer, buffer_len, m_sequence, type);
+}
+
 const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
-                    const uint8_t type) {
-  auto [packet, packet_len] = BuildPacket(type, m_sequence, buffer, buffer_len);
+                    uint32_t sequence, const uint8_t type) {
+  auto [packet, packet_len] = BuildPacket(type, sequence, buffer, buffer_len);
   const int status =
       sendto(m_sock, packet.get(), packet_len, 0,
              (const sockaddr *)&m_peer_addr, sizeof(m_peer_addr));
@@ -166,7 +173,7 @@ Buffer TBD::ProcessPacket(TBPacket &received_packet,
 
   if (received_seq < m_sequence) {
     // send an Ack for what we're waiting for
-    AckPacket(m_sequence);
+    AckPacket(m_sequence, 0);
     return nullptr;
   }
 
@@ -177,20 +184,18 @@ Buffer TBD::ProcessPacket(TBPacket &received_packet,
 
   if (packet_type == PacketType::PING) {
     // ack the ping
-    AckPacket(received_seq + sizeof(TBHeader));
+    AckPacket(received_seq, 1);
   }
 
   // any other message we acknowledge it and return teh payload
-  AckPacket(received_seq + sizeof(TBHeader) + received_packet.header.length);
+  AckPacket(received_seq, received_packet.header.length);
   return std::move(received_packet.payload);
 }
 
-void TBD::AckPacket(uint32_t sequence) {
-  // update our sequence to this so we know where we are
+void TBD::AckPacket(uint32_t sequence, uint32_t length) {
   m_sequence = sequence;
-  // payload will be emppty
   Buffer empty_load;
-  if (Send(empty_load, 0, PacketType::ACK) < 0) {
+  if (Send(empty_load, 0, sequence + length, PacketType::ACK) < 0) {
     // TODO: HANDLE
   }
 }
