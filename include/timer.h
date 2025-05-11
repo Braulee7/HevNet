@@ -30,7 +30,7 @@ int timer(std::chrono::milliseconds &after, bool async, callable &&f,
 class Timeout {
 public:
   Timeout(const int timeout_in_ms);
-  ~Timeout();
+  ~Timeout() = default;
 
   const int Start();
   const bool IsFinished() const;

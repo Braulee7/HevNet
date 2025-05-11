@@ -10,8 +10,10 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <unordered_map>
 
 #include "packet.h"
+#include "timer.h"
 
 namespace Hev {
 class TBD {
@@ -42,5 +44,9 @@ private:
   sockaddr_in m_peer_addr;
 
   uint32_t m_sequence;
+  Timeout m_timeout;
+
+  // acking map
+  std::unordered_map<uint32_t, Buffer> m_unacked_packs;
 };
 } // namespace Hev
