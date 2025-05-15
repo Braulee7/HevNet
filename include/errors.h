@@ -2,10 +2,16 @@
 
 namespace Hev {
 namespace Net {
-#define SOCKET_CLOSED 0x30000001
-#define EMPTY_BUFFER 0x30000002
-#define BIND_SOCKET_ERROR 0x30000003
-#define RECEIVE_ERROR 0x30000004
-#define TIMEOUT 0x30000005
+#define SOCKET_CLOSED 0x3001
+#define EMPTY_BUFFER 0x3002
+#define BIND_SOCKET_ERROR 0x3003
+
+#define RECEIVE_ERROR 0x3100
+#define TIMEOUT 0x3101
+#define UNRECOGNIZED_PEER 0x3102
+
+#define RECEIVE_SUCCESS 0x3200
+#define RECEIVED_ACK 0x3201
+#define RECEIVED_PACKET 0x3202
 } // namespace Net
 } // namespace Hev

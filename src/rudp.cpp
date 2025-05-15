@@ -2,11 +2,13 @@
 #include "errors.h"
 #include "packet.h"
 #include <bits/types/struct_timeval.h>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <thread>
 
 #define MAX_BUFFER_LEN 2048
 namespace Hev {
@@ -27,6 +29,12 @@ TBD::TBD(const char *local_addr, const int local_port, const char *peer_ip,
 }
 
 TBD::~TBD() {
+  // signal the threads to close
+  m_connected.store(false);
+  if (m_sender_thread.joinable())
+    m_sender_thread.join();
+  if (m_receiver_thread.joinable())
+    m_receiver_thread.join();
   // shouldn't overwrite the standard fds
   if (m_sock > 2)
     close(m_sock);
@@ -48,14 +56,17 @@ const int TBD::Listen() {
     if ((status = RetrievePacket(received_packet, &received_addr)) != 0) {
       continue;
     }
-    if (ProcessPacket(received_packet, received_addr, nullptr)) {
+    if (ProcessPacket(received_packet, received_addr, nullptr) ==
+        RECEIVED_ACK) {
       m_sequence = received_packet.header.sequence;
-      Send(empty_buffer, 0, PacketType::SYNACK);
+      SendAndWait(empty_buffer, 0, PacketType::SYNACK);
       acked = true;
     }
   }
   if (acked) {
-    m_connected = true;
+    m_connected.store(true);
+    m_receiver_thread = SetupReceiverThread();
+    m_sender_thread = SetupSenderThread();
     return 0;
   } else {
     return -1;
@@ -71,11 +82,13 @@ const int TBD::Connect() {
   int status = 0;
   m_sequence = 1;
   // send takes care of the SYNACK
-  if ((status = Send(empty_buffer, 0, PacketType::SYN)) < 0) {
+  if ((status = SendAndWait(empty_buffer, 0, PacketType::SYN)) < 0) {
     return status;
   }
   AckPacket(0, 1);
-  m_connected = true;
+  m_connected.store(true);
+  m_receiver_thread = SetupReceiverThread();
+  m_sender_thread = SetupSenderThread();
   return 0;
 }
 
@@ -86,36 +99,70 @@ const int TBD::Send(Buffer &buffer, const size_t buffer_len, uint8_t type) {
 const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
                     uint32_t sequence, const uint8_t type) {
   auto [packet, packet_len] = BuildPacket(type, sequence, buffer, buffer_len);
-  bool acked = false;
+  m_send_queue.emplace(std::move(packet), packet_len, sequence);
+
+  return 0;
+}
+
+const int TBD::SendConstructed(const Buffer &packet, const size_t packet_len) {
+  // setup the timeout
+
+  fd_set write_fds;
+  int select_ret = 0;
+  timeval tv;
+  tv.tv_sec = 2;
+  tv.tv_usec = 0;
+  FD_ZERO(&write_fds);
+  FD_SET(m_sock, &write_fds);
+
+  select_ret = select(m_sock + 1, NULL, &write_fds, NULL, &tv);
+
+  // timeout or error
+  if (select_ret == 0 || select_ret < 1) {
+    return -1;
+  }
+  return sendto(m_sock, packet.get(), packet_len, 0,
+                (const sockaddr *)&m_peer_addr, sizeof(m_peer_addr));
+}
+
+const int TBD::SendAndWait(Buffer &buffer, const size_t buffer_len,
+                           uint8_t type) {
+  auto [packet, packet_len] = BuildPacket(type, m_sequence, buffer, buffer_len);
   int status = -1;
   uint8_t total_tries = 0;
+  bool acked = false;
   while (!acked && ++total_tries < MAX_TRIES) {
-    status = sendto(m_sock, packet.get(), packet_len, 0,
-                    (const sockaddr *)&m_peer_addr, sizeof(m_peer_addr));
+    status = SendConstructed(packet, packet_len);
+    if (status > 0) {
+      total_tries += MAX_TRIES;
+    }
+
     // wait for an ack
     TBPacket retrieved_pack = {};
     sockaddr_in received_addr;
     if (RetrievePacket(retrieved_pack, &received_addr) != 0) {
       continue;
     }
-    if (ProcessPacket(retrieved_pack, received_addr, nullptr)) {
+    if (ProcessPacket(retrieved_pack, received_addr, nullptr) == RECEIVED_ACK) {
       acked = true;
     }
   }
+
   return status;
 }
 
 Buffer TBD::Receive() {
-  Buffer payload = nullptr;
-  uint8_t total_tries = 0;
-  while (!payload && ++total_tries < MAX_TRIES) {
-    TBPacket received_packet = {};
-    sockaddr_in received_addr = {};
-    if (RetrievePacket(received_packet, &received_addr) != 0) {
-      return nullptr;
-    }
-    bool status = ProcessPacket(received_packet, received_addr, &payload);
-  }
+  Buffer payload;
+  if (!m_received_queues.pop_wait(&payload))
+    return nullptr;
+  return std::move(payload);
+}
+
+Buffer TBD::Receive(std::chrono::milliseconds ms) {
+
+  Buffer payload;
+  if (!m_received_queues.pop_wait_till(ms, &payload))
+    return nullptr;
   return std::move(payload);
 }
 
@@ -129,7 +176,7 @@ const int TBD::RetrievePacket(TBPacket &packet, sockaddr_in *_received_addr) {
   fd_set read_fds;
   int select_ret = 0;
   timeval tv;
-  tv.tv_sec = 15;
+  tv.tv_sec = 2;
   tv.tv_usec = 0;
   FD_ZERO(&read_fds);
   FD_SET(m_sock, &read_fds);
@@ -154,26 +201,26 @@ const int TBD::RetrievePacket(TBPacket &packet, sockaddr_in *_received_addr) {
   return 0;
 }
 
-const bool TBD::ProcessPacket(TBPacket &received_packet,
-                              sockaddr_in &received_addr,
-                              Buffer *retrieved_buffer) {
+const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
+                                  sockaddr_in &received_addr,
+                                  Buffer *retrieved_buffer) {
   const uint32_t received_seq = received_packet.header.sequence;
   const uint16_t packet_type = received_packet.header.type;
 
   // make sure received address is from whom we expect
   if (received_addr.sin_addr.s_addr != m_peer_addr.sin_addr.s_addr) {
     // disregard
-    return false;
+    return UNRECOGNIZED_PEER;
   }
 
   if (packet_type & PacketType::SYNACK) {
-    return true;
+    return RECEIVED_ACK;
   }
   // any other message we acknowledge it and return teh payload
   AckPacket(received_seq, received_packet.header.length);
   if (retrieved_buffer)
     *retrieved_buffer = std::move(received_packet.payload);
-  return true;
+  return RECEIVED_PACKET;
 }
 
 void TBD::AckPacket(uint32_t sequence, uint32_t length) {
@@ -184,6 +231,47 @@ void TBD::AckPacket(uint32_t sequence, uint32_t length) {
 
   sendto(m_sock, packet.get(), packet_len, 0, (const sockaddr *)&m_peer_addr,
          sizeof(m_peer_addr));
+}
+
+std::thread TBD::SetupSenderThread() {
+  return std::thread([this]() {
+    while (this->m_connected) {
+      QueuePacket packet_struct;
+      if (!this->m_send_queue.pop_wait_till(std::chrono::milliseconds(2000),
+                                            &packet_struct))
+        continue;
+      int total_tries = 0;
+      int status = 0;
+      while (++total_tries < MAX_TRIES) {
+        status =
+            SendConstructed(packet_struct.buffer, packet_struct.buffer_len);
+        if (status > 0) {
+          total_tries += MAX_TRIES;
+        }
+      }
+    }
+  });
+}
+
+std::thread TBD::SetupReceiverThread() {
+
+  return std::thread([this]() {
+    while (this->m_connected) {
+      TBPacket received_packet{};
+      sockaddr_in received_addr;
+      Buffer received_buffer;
+
+      if (RetrievePacket(received_packet, &received_addr) != 0)
+        continue;
+
+      if (ProcessPacket(received_packet, received_addr, &received_buffer) !=
+          RECEIVED_PACKET)
+        continue;
+
+      this->m_received_queues.emplace(std::move(received_buffer));
+    }
+    RECEIVED_PACKET;
+  });
 }
 
 } // namespace Hev
