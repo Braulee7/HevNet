@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -85,22 +86,29 @@ const int TBD::Connect() {
   if ((status = SendAndWait(empty_buffer, 0, PacketType::SYN)) < 0) {
     return status;
   }
-  AckPacket(0, 1);
+  AckPacket(1, 1);
   m_connected.store(true);
   m_receiver_thread = SetupReceiverThread();
   m_sender_thread = SetupSenderThread();
   return 0;
 }
 
-const int TBD::Send(Buffer &buffer, const size_t buffer_len, uint8_t type) {
-  return Send(buffer, buffer_len, m_sequence, type);
+std::pair<Buffer, size_t> TBD::BuildAndUpdatePacket(Buffer &buffer,
+                                                    const size_t buffer_len,
+                                                    uint8_t type) {
+  m_sequence += buffer_len;
+  auto packet_and_len = BuildPacket(type, m_sequence, buffer, buffer_len);
+  return packet_and_len;
 }
 
-const int TBD::Send(std::unique_ptr<uint8_t[]> &buffer, const size_t buffer_len,
-                    uint32_t sequence, const uint8_t type) {
-  auto [packet, packet_len] = BuildPacket(type, sequence, buffer, buffer_len);
-  m_send_queue.emplace(std::move(packet), packet_len, sequence);
+const int TBD::Send(Buffer &buffer, const size_t buffer_len, uint8_t type) {
+  return QueueSend(buffer, buffer_len, type);
+}
 
+const int TBD::QueueSend(std::unique_ptr<uint8_t[]> &buffer,
+                         const size_t buffer_len, const uint8_t type) {
+  auto [packet, packet_len] = BuildAndUpdatePacket(buffer, buffer_len, type);
+  m_send_queue.emplace(std::move(packet), packet_len, m_sequence);
   return 0;
 }
 
@@ -224,15 +232,11 @@ const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
 }
 
 void TBD::QueueAck(uint32_t sequence, uint32_t length) {
-  m_sequence = sequence;
   Buffer empty_load;
-  auto [packet, packet_len] =
-      BuildPacket(PacketType::ACK, sequence + length, empty_load, 0);
-  m_send_queue.emplace(std::move(packet), packet_len, sequence);
+  QueueSend(empty_load, 0, PacketType::ACK);
 }
 
 void TBD::AckPacket(uint32_t sequence, uint32_t length) {
-  m_sequence = sequence;
   Buffer empty_load;
   auto [packet, packet_len] =
       BuildPacket(PacketType::ACK, sequence + length, empty_load, 0);

@@ -34,8 +34,11 @@ public:
   Buffer Receive(std::chrono::milliseconds ms);
 
 private:
-  const int Send(Buffer &buffer, const size_t buffer_len, uint32_t sequence,
-                 const uint8_t type);
+  std::pair<Buffer, size_t> BuildAndUpdatePacket(Buffer &buffer,
+                                                 const size_t buffer_len,
+                                                 const uint8_t type);
+  const int QueueSend(Buffer &buffer, const size_t buffer_len,
+                      const uint8_t type);
   const int SendConstructed(const Buffer &packet, const size_t packet_len);
   const int SendAndWait(Buffer &buffer, const size_t buffer_len, uint8_t type);
   void QueueAck(uint32_t sequence, uint32_t length);
