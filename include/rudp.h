@@ -38,6 +38,7 @@ private:
                  const uint8_t type);
   const int SendConstructed(const Buffer &packet, const size_t packet_len);
   const int SendAndWait(Buffer &buffer, const size_t buffer_len, uint8_t type);
+  void QueueAck(uint32_t sequence, uint32_t length);
   void AckPacket(uint32_t sequence, uint32_t length);
   const int RetrievePacket(TBPacket &packet, sockaddr_in *received_addr);
   const uint32_t ProcessPacket(TBPacket &received_packet,

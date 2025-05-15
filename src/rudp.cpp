@@ -217,10 +217,18 @@ const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
     return RECEIVED_ACK;
   }
   // any other message we acknowledge it and return teh payload
-  AckPacket(received_seq, received_packet.header.length);
+  QueueAck(received_seq, received_packet.header.length);
   if (retrieved_buffer)
     *retrieved_buffer = std::move(received_packet.payload);
   return RECEIVED_PACKET;
+}
+
+void TBD::QueueAck(uint32_t sequence, uint32_t length) {
+  m_sequence = sequence;
+  Buffer empty_load;
+  auto [packet, packet_len] =
+      BuildPacket(PacketType::ACK, sequence + length, empty_load, 0);
+  m_send_queue.emplace(std::move(packet), packet_len, sequence);
 }
 
 void TBD::AckPacket(uint32_t sequence, uint32_t length) {
@@ -235,7 +243,7 @@ void TBD::AckPacket(uint32_t sequence, uint32_t length) {
 
 std::thread TBD::SetupSenderThread() {
   return std::thread([this]() {
-    while (this->m_connected) {
+    while (this->m_connected || !this->m_send_queue.empty()) {
       QueuePacket packet_struct;
       if (!this->m_send_queue.pop_wait_till(std::chrono::milliseconds(2000),
                                             &packet_struct))
