@@ -1,15 +1,9 @@
 #include "rudp.h"
 #include "errors.h"
-#include "packet.h"
 #include <bits/types/struct_timeval.h>
-#include <chrono>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
-#include <netinet/in.h>
 #include <sys/select.h>
-#include <sys/socket.h>
-#include <thread>
 
 #define MAX_BUFFER_LEN 2048
 namespace Hev {
@@ -200,7 +194,7 @@ const int TBD::RetrievePacket(TBPacket &packet, sockaddr_in *_received_addr) {
                           (sockaddr *)&received_addr, &received_addr_len);
   // got nothing
   if (received_len < 0) {
-    return -1;
+    return RECEIVE_ERROR;
   }
   packet = RebuildPacket(std::move(buffer));
   if (_received_addr) {
@@ -248,7 +242,7 @@ void TBD::AckPacket(uint32_t sequence, uint32_t length) {
 std::thread TBD::SetupSenderThread() {
   return std::thread([this]() {
     while (this->m_connected || !this->m_send_queue.empty()) {
-      QueuePacket packet_struct;
+      SendPacket packet_struct;
       if (!this->m_send_queue.pop_wait_till(std::chrono::milliseconds(2000),
                                             &packet_struct))
         continue;
@@ -282,7 +276,6 @@ std::thread TBD::SetupReceiverThread() {
 
       this->m_received_queues.emplace(std::move(received_buffer));
     }
-    RECEIVED_PACKET;
   });
 }
 
