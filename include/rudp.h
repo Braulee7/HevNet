@@ -18,27 +18,51 @@
 namespace Hev {
 class TBD {
 public:
-  TBD(const char *local_addr, const int local_port, const char *peer_ip,
-      const int peer_port);
+  /* Copy constructor
+   * we don't want to deal with two connections to the same socket
+   * at least right now so I'm chosing to delete the copy constructor
+   * so only a single TBD socket has access to a peer connection
+   * at a time
+   */
+  TBD(TBD &other) = delete;
+  /* Move contructor
+   * Moves the connections from other to the current socket. Invalidates
+   * the connection and maintains only a single point of contact
+   * to the peer that other is connected to
+   */
+  TBD(TBD &&other);
   ~TBD();
+  /* Bind
+   * Creates a TBD socket and binds it to the local address and port
+   * This function is the current only way to get a valid TBD socket
+   * to ensure that the socket is properly initalized
+   */
+  static TBD Bind(const char *local_addr, const int local_port);
   /* Await for your peer to connect to you, essentially you invite a peer
    * and await for them acknowledge your invitation
    * Listen:
    * Makes the peer wait passively until another peer initiates a
    * connection. Once a peer reaches out with a SYN the two peers
-   * establish a connection through a three way handshake.
+   * establish a connection through a three way handshake. Currently
+   * only accepts connections to the peer being invited via the
+   * parameters
+   * params:
+   *  peer_ip: the ip address of the peer you wish to connect to
+   *  peer_port: the port that the peer should be communicating through
    * Returns: status of connection 0 if it is successful else otherwise
    */
-  const int Listen();
-  /* Join your peer which has sent you an invitation already to join
-   * their circle
-   * Connect:
+  const int Listen(const char *peer_ip, const int peer_port);
+  /* Connect:
    * Connects to a listening peer. Establishes a connection through a
    * three way handshake. Waits for until a connection is established
-   * or returns. Unblocking call.
+   * or returns. Unblocking call. Attempts to connect to the peer
+   * address being passed in
+   * params:
+   *  peer_ip: the ip address of the peer you wish to connect to
+   *  peer_port: the port that the peer should be communicating through
    * Returns: status of the connection 0 if successful, else otherwise
    */
-  const int Connect();
+  const int Connect(const char *peer_ip, const int peer_port);
   /* Send:
    * Sends a message to the peer connected to. Unblocking call and instead
    * queues the message to be sent whenever the peer and socket are ready.
@@ -73,6 +97,22 @@ public:
   Buffer Receive(std::chrono::milliseconds ms);
 
 private:
+  // private constructor. This class should be instantiated through the bind
+  // method to make sure there is a valid address and that binding is successful
+  // prior to any other calls
+  TBD(const char *local_addr, const int local_port);
+
+  /* SetUpPeerInfo:
+   * Creates the peer information that this socket will connect to
+   * params:
+   * params:
+   *  peer_ip: the ip address of the peer you wish to connect to
+   *  peer_port: the port that the peer should be communicating through
+   * Returns:
+   *  any indication of an error is returned. Currently only returns
+   *  0
+   */
+  const int SetUpPeerInfo(const char *peer_ip, const int peer_port);
   /*
    * BuildAndUpdatePacket
    * builds the packet with the payload and updates the sequence
@@ -197,6 +237,13 @@ private:
         : buffer(std::move(_buffer)), buffer_len(_buffer_len),
           sequence(_sequence) {}
   };
+
+  /* empty buffer
+   * this is often used to send acks or any non MSG packets
+   * so it's better to just have one single buffer we can reference
+   * rather than constructing a new one each time
+   */
+  static Buffer s_empty_buffer;
 
 private:
   int m_sock;

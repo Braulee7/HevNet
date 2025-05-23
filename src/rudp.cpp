@@ -7,20 +7,41 @@
 
 #define MAX_BUFFER_LEN 2048
 namespace Hev {
-TBD::TBD(const char *local_addr, const int local_port, const char *peer_ip,
-         const int peer_port)
+TBD::TBD(const char *local_addr, const int local_port)
     : m_sequence(0), m_connected(false) {
   // set up local socket info where we'll be listening from
   m_sock = socket(AF_INET, SOCK_DGRAM, 0);
   m_local_addr.sin_addr.s_addr = INADDR_ANY;
   m_local_addr.sin_port = htons(local_port);
   m_local_addr.sin_family = AF_INET;
-  // peer addr info where we'll be sending to
-  m_peer_addr.sin_port = htons(peer_port);
-  m_peer_addr.sin_family = AF_INET;
-  inet_pton(AF_INET, peer_ip, &m_peer_addr.sin_addr);
 
   // TODO: set up sequencing variables
+}
+
+TBD::TBD(TBD &&other) {
+  if (this == &other)
+    return;
+
+  this->m_sock = other.m_sock;
+  other.m_sock = -1;
+  this->m_local_addr = other.m_local_addr;
+  this->m_sequence = other.m_sequence;
+  this->m_connected = other.m_connected.load();
+
+  // if it is running we want to kill the other thread so
+  // we can start it on this object instead
+  other.m_connected = false;
+  if (other.m_receiver_thread.joinable()) {
+    // stop other threads
+    other.m_sender_thread.join();
+    other.m_receiver_thread.join();
+    // move over any pending messages
+    this->m_send_queue = std::move(other.m_send_queue);
+    this->m_received_queues = std::move(other.m_received_queues);
+    // set up this threads
+    SetupReceiverThread();
+    SetupSenderThread();
+  }
 }
 
 TBD::~TBD() {
@@ -35,18 +56,37 @@ TBD::~TBD() {
     close(m_sock);
 }
 
-const int TBD::Listen() {
+const int TBD::SetUpPeerInfo(const char *peer_ip, const int peer_port) {
+  // peer addr info where we'll be sending to
+  m_peer_addr.sin_port = htons(peer_port);
+  m_peer_addr.sin_family = AF_INET;
+  inet_pton(AF_INET, peer_ip, &m_peer_addr.sin_addr);
+  return 0;
+}
+
+TBD TBD::Bind(const char *local_addr, const int local_port) {
+  TBD socket(local_addr, local_port);
+
   // wait for a syn then send a a syn back
-  if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
-    return -1;
+  if (bind(socket.m_sock, (const sockaddr *)&socket.m_local_addr,
+           sizeof(socket.m_local_addr)) < 0) {
+    throw 0;
   }
-  Buffer empty_buffer;
+
+  return socket;
+}
+
+const int TBD::Listen(const char *peer_ip, const int peer_port) {
+  if (SetUpPeerInfo(peer_ip, peer_port) != 0)
+    return -1;
+
   bool acked = false;
   int times = 6;
   while (!acked && times > 0) {
     TBPacket received_packet = {};
     sockaddr_in received_addr = {};
     int status = 0;
+    Buffer empty_buffer;
     times--;
     if ((status = RetrievePacket(received_packet, &received_addr)) != 0) {
       continue;
@@ -68,14 +108,13 @@ const int TBD::Listen() {
   }
 }
 // bind socket, wait for SYN then send a SYN back and wait for the ACK
-const int TBD::Connect() {
-
-  if (bind(m_sock, (const sockaddr *)&m_local_addr, sizeof(m_local_addr)) < 0) {
+const int TBD::Connect(const char *peer_ip, const int peer_port) {
+  if (SetUpPeerInfo(peer_ip, peer_port) != 0)
     return -1;
-  }
-  Buffer empty_buffer;
+
   int status = 0;
   m_sequence = 1;
+  Buffer empty_buffer;
   // send takes care of the SYNACK
   if ((status = SendAndWait(empty_buffer, 0, PacketType::SYN)) < 0) {
     return status;
