@@ -220,6 +220,13 @@ private:
    *  the thread object containing the id of the created thread
    */
   std::thread SetupReceiverThread();
+  /* SetupPingThread
+   * Creates a thread that will periodically send a ping to the
+   * peer to make sure the connection is still alive.
+   * returns:
+   *  the thread that will maintain the pinging
+   */
+  std::thread SetupPingThread();
 
 private:
   /* SendPacket
@@ -252,7 +259,7 @@ private:
   sockaddr_in m_peer_addr;
 
   uint32_t m_sequence;
-  std::atomic<bool> m_connected;
+  std::atomic_bool m_connected;
 
   // queues to put send and received packets
   TSQueue<SendPacket> m_send_queue;
@@ -264,6 +271,10 @@ private:
   // thread ids of the running threads
   std::thread m_sender_thread;
   std::thread m_receiver_thread;
+
+  // check if the peer is still alive
+  std::thread m_ping_thread;
+  std::atomic_bool m_ponged;
 
   // maximum tries for sending a packet before giving up
   static const uint8_t MAX_TRIES = 10;

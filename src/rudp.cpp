@@ -1,9 +1,13 @@
 #include "rudp.h"
 #include "errors.h"
+#include "packet.h"
 #include <bits/types/struct_timeval.h>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <sys/select.h>
+#include <thread>
 
 #define MAX_BUFFER_LEN 2048
 namespace Hev {
@@ -35,12 +39,14 @@ TBD::TBD(TBD &&other) {
     // stop other threads
     other.m_sender_thread.join();
     other.m_receiver_thread.join();
+    other.m_ping_thread.join();
     // move over any pending messages
     this->m_send_queue = std::move(other.m_send_queue);
     this->m_received_queues = std::move(other.m_received_queues);
     // set up this threads
-    SetupReceiverThread();
-    SetupSenderThread();
+    m_receiver_thread = SetupReceiverThread();
+    m_sender_thread = SetupSenderThread();
+    m_ping_thread = SetupPingThread();
   }
 }
 
@@ -51,6 +57,10 @@ TBD::~TBD() {
     m_sender_thread.join();
   if (m_receiver_thread.joinable())
     m_receiver_thread.join();
+  // detach ping thread so we're not waiting for
+  // it while it sleeps
+  if (m_ping_thread.joinable())
+    m_ping_thread.detach();
   // shouldn't overwrite the standard fds
   if (m_sock > 2)
     close(m_sock);
@@ -102,6 +112,7 @@ const int TBD::Listen(const char *peer_ip, const int peer_port) {
     m_connected.store(true);
     m_receiver_thread = SetupReceiverThread();
     m_sender_thread = SetupSenderThread();
+    m_ping_thread = SetupPingThread();
     return 0;
   } else {
     return -1;
@@ -123,6 +134,7 @@ const int TBD::Connect(const char *peer_ip, const int peer_port) {
   m_connected.store(true);
   m_receiver_thread = SetupReceiverThread();
   m_sender_thread = SetupSenderThread();
+  m_ping_thread = SetupPingThread();
   return 0;
 }
 
@@ -257,6 +269,15 @@ const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
   if (packet_type & PacketType::SYNACK) {
     return RECEIVED_ACK;
   }
+  if (packet_type & PacketType::PING) {
+    Buffer empty_load;
+    QueueSend(empty_load, 0, PacketType::PONG);
+    return RECEIVED_PING;
+  }
+  if (packet_type & PacketType::PONG) {
+    m_ponged = true;
+    return RECEIVED_PONG;
+  }
   // any other message we acknowledge it and return teh payload
   QueueAck(received_seq, received_packet.header.length);
   if (retrieved_buffer)
@@ -314,6 +335,33 @@ std::thread TBD::SetupReceiverThread() {
         continue;
 
       this->m_received_queues.emplace(std::move(received_buffer));
+    }
+  });
+}
+
+std::thread TBD::SetupPingThread() {
+  return std::thread([this]() {
+    auto start = std::chrono::high_resolution_clock::now();
+    std::chrono::seconds timeout(120);
+    while (this->m_connected) {
+      if (this->m_ponged.load()) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto diff = now - start;
+        this->m_ponged = false;
+      } else {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto diff = now - start;
+        if (now - start > timeout) {
+          // lost connection
+          this->m_connected = false;
+        }
+      }
+
+      // send a ping
+      Buffer empty_load;
+      this->QueueSend(empty_load, 0, PacketType::PING);
+      // wait to check
+      std::this_thread::sleep_for(std::chrono::seconds(15));
     }
   });
 }

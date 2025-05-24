@@ -13,5 +13,7 @@ namespace Net {
 #define RECEIVE_SUCCESS 0x3200
 #define RECEIVED_ACK 0x3201
 #define RECEIVED_PACKET 0x3202
+#define RECEIVED_PING 0x3203
+#define RECEIVED_PONG 0x3204
 } // namespace Net
 } // namespace Hev

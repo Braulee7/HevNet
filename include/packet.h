@@ -12,7 +12,8 @@ struct PacketType {
   static const uint16_t ACK = 0x02;
   static const uint16_t SYNACK = SYN | ACK;
   static const uint16_t PING = 0x04;
-  static const uint16_t MSG = 0x08;
+  static const uint16_t PONG = 0x08;
+  static const uint16_t MSG = 0x10;
 };
 
 struct TBHeader {
