@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "packet.h"
+#include "tsmap.h"
 #include "tsqueue.h"
 
 namespace Hev {
@@ -256,6 +257,9 @@ private:
   // queues to put send and received packets
   TSQueue<SendPacket> m_send_queue;
   TSQueue<Buffer> m_received_queues;
+
+  // keeps track of any sequences that aren't acked yet
+  TSMap<uint32_t, Buffer> m_unacked_packets;
 
   // thread ids of the running threads
   std::thread m_sender_thread;
