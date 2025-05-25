@@ -139,6 +139,17 @@ private:
    */
   const int QueueSend(Buffer &buffer, const size_t buffer_len,
                       const uint8_t type);
+  /* QueueRetransmit
+   * Queues up a packet to retransmit to the user. Same as Queue send
+   * except this doesn't worry about building the packet and assume
+   * theh buffer being passed in is already constructed
+   * params:
+   *  buffer: the built packet to send to user
+   *  buffer_len: the length of the built packet
+   * returns:
+   *  status of queue. CUrrently always 0
+   */
+  const int QueueRetransmit(SharedBuffer &buffer, const size_t buffer_len);
   /* SendConstructed
    * Immediately sends a constructed packet to the socket.
    * params:
@@ -147,6 +158,11 @@ private:
    * returns: an integer indicating the success of the send
    */
   const int SendConstructed(const Buffer &packet, const size_t packet_len);
+  /* overwrite to send a shared pointer. Used for retransmitting */
+  const int SendConstructed(const SharedBuffer &packet,
+                            const size_t packet_len);
+  /* overwrite to send an unmanaged pointer. Used to implement above*/
+  const int SendConstructed(const uint8_t *packet, const size_t packet_len);
   /* SendAndWait
    * Sends a packet and waits until an ack is received. This waits for
    * a small ammount of time and currently breaks the multi-threaded set up.
@@ -236,7 +252,7 @@ private:
    * specific packet.
    */
   struct SendPacket {
-    Buffer buffer;
+    SharedBuffer buffer;
     size_t buffer_len;
     uint32_t sequence;
 
@@ -244,6 +260,14 @@ private:
     SendPacket(Buffer _buffer, size_t _buffer_len, uint32_t _sequence)
         : buffer(std::move(_buffer)), buffer_len(_buffer_len),
           sequence(_sequence) {}
+
+    SendPacket(SharedBuffer _buffer, size_t _buffer_len, uint32_t _sequence)
+        : buffer(_buffer), buffer_len(_buffer_len), sequence(_sequence) {}
+  };
+
+  struct UnackedPackets {
+    SharedBuffer buffer;
+    size_t buffer_len;
   };
 
   /* empty buffer
@@ -266,7 +290,7 @@ private:
   TSQueue<Buffer> m_received_queues;
 
   // keeps track of any sequences that aren't acked yet
-  TSMap<uint32_t, Buffer> m_unacked_packets;
+  TSMap<uint32_t, UnackedPackets> m_unacked_packets;
 
   // thread ids of the running threads
   std::thread m_sender_thread;

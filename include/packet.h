@@ -6,6 +6,7 @@
 
 namespace Hev {
 using Buffer = std::unique_ptr<uint8_t[]>;
+using SharedBuffer = std::shared_ptr<uint8_t[]>;
 
 struct PacketType {
   static const uint16_t SYN = 0x01;

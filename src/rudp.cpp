@@ -157,7 +157,21 @@ const int TBD::QueueSend(std::unique_ptr<uint8_t[]> &buffer,
   return 0;
 }
 
+const int TBD::QueueRetransmit(SharedBuffer &buffer, const size_t buffer_len) {
+  m_send_queue.emplace(buffer, buffer_len, 0);
+  return 0;
+}
+
 const int TBD::SendConstructed(const Buffer &packet, const size_t packet_len) {
+  return SendConstructed(packet.get(), packet_len);
+}
+
+const int TBD::SendConstructed(const SharedBuffer &packet,
+                               const size_t packet_len) {
+  return SendConstructed(packet.get(), packet_len);
+}
+
+const int TBD::SendConstructed(const uint8_t *packet, const size_t packet_len) {
   // setup the timeout
 
   fd_set write_fds;
@@ -174,8 +188,8 @@ const int TBD::SendConstructed(const Buffer &packet, const size_t packet_len) {
   if (select_ret == 0 || select_ret < 1) {
     return -1;
   }
-  return sendto(m_sock, packet.get(), packet_len, 0,
-                (const sockaddr *)&m_peer_addr, sizeof(m_peer_addr));
+  return sendto(m_sock, packet, packet_len, 0, (const sockaddr *)&m_peer_addr,
+                sizeof(m_peer_addr));
 }
 
 const int TBD::SendAndWait(Buffer &buffer, const size_t buffer_len,
@@ -267,6 +281,16 @@ const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
   }
 
   if (packet_type & PacketType::SYNACK) {
+    // make sure the packet sequence is the same as current
+    // sequence
+    if (received_seq < m_sequence) {
+      // retransmit
+      std::vector<UnackedPackets> packets_to_retransmit(
+          m_unacked_packets.GetGreaterThan(received_seq));
+      for (auto &packet : packets_to_retransmit) {
+        QueueRetransmit(packet.buffer, packet.buffer_len);
+      }
+    }
     return RECEIVED_ACK;
   }
   if (packet_type & PacketType::PING) {
@@ -312,6 +336,10 @@ std::thread TBD::SetupSenderThread() {
         status =
             SendConstructed(packet_struct.buffer, packet_struct.buffer_len);
         if (status > 0) {
+          // add packet to the ack map
+          this->m_unacked_packets.insert(
+              packet_struct.sequence,
+              {std::move(packet_struct.buffer), packet_struct.buffer_len});
           total_tries += MAX_TRIES;
         }
       }
