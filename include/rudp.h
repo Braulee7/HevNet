@@ -149,7 +149,21 @@ private:
    * returns:
    *  status of queue. CUrrently always 0
    */
-  const int QueueRetransmit(SharedBuffer &buffer, const size_t buffer_len);
+  const int QueueRetransmit(SharedBuffer &buffer, const size_t buffer_len,
+                            const uint32_t sequence);
+  /* QueuePacket
+   * Queues up a packet to send to the user. This builds the packet
+   * and adds it to the queue of packets that the sender thread watches
+   * params:
+   *  buffer: the payload that will be sent to the user
+   *  buffer_len: the length of the payload
+   *  type: the type of packet that is being queued
+   *  sequence: the sequence that should be associated with the packet
+   * returns:
+   *  status of queue. CUrrently always 0
+   */
+  const int QueuePacket(Buffer &buffer, const size_t buffer_len,
+                        const uint8_t type, const uint32_t sequence);
   /* SendConstructed
    * Immediately sends a constructed packet to the socket.
    * params:
@@ -265,11 +279,6 @@ private:
         : buffer(_buffer), buffer_len(_buffer_len), sequence(_sequence) {}
   };
 
-  struct UnackedPackets {
-    SharedBuffer buffer;
-    size_t buffer_len;
-  };
-
   /* empty buffer
    * this is often used to send acks or any non MSG packets
    * so it's better to just have one single buffer we can reference
@@ -290,7 +299,7 @@ private:
   TSQueue<Buffer> m_received_queues;
 
   // keeps track of any sequences that aren't acked yet
-  TSMap<uint32_t, UnackedPackets> m_unacked_packets;
+  TSMap<uint32_t, SendPacket> m_unacked_packets;
 
   // thread ids of the running threads
   std::thread m_sender_thread;

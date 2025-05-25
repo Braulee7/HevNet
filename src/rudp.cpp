@@ -141,8 +141,8 @@ const int TBD::Connect(const char *peer_ip, const int peer_port) {
 std::pair<Buffer, size_t> TBD::BuildAndUpdatePacket(Buffer &buffer,
                                                     const size_t buffer_len,
                                                     uint8_t type) {
-  m_sequence += buffer_len;
   auto packet_and_len = BuildPacket(type, m_sequence, buffer, buffer_len);
+  m_sequence += buffer_len;
   return packet_and_len;
 }
 
@@ -152,13 +152,27 @@ const int TBD::Send(Buffer &buffer, const size_t buffer_len, uint8_t type) {
 
 const int TBD::QueueSend(std::unique_ptr<uint8_t[]> &buffer,
                          const size_t buffer_len, const uint8_t type) {
-  auto [packet, packet_len] = BuildAndUpdatePacket(buffer, buffer_len, type);
-  m_send_queue.emplace(std::move(packet), packet_len, m_sequence);
+  return QueuePacket(buffer, buffer_len, type, m_sequence);
   return 0;
 }
 
-const int TBD::QueueRetransmit(SharedBuffer &buffer, const size_t buffer_len) {
-  m_send_queue.emplace(buffer, buffer_len, 0);
+const int TBD::QueueRetransmit(SharedBuffer &buffer, const size_t buffer_len,
+                               const uint32_t sequence) {
+  m_send_queue.emplace(buffer, buffer_len, sequence);
+  return 0;
+}
+
+void TBD::QueueAck(uint32_t sequence, uint32_t length) {
+  Buffer empty_load;
+  auto [packet, packet_len] =
+      BuildPacket(PacketType::ACK, sequence + length, empty_load, 0);
+  m_send_queue.emplace(std::move(packet), packet_len, sequence + length);
+}
+
+const int TBD::QueuePacket(Buffer &buffer, const size_t buffer_len,
+                           const uint8_t type, const uint32_t sequence) {
+  auto [packet, packet_len] = BuildAndUpdatePacket(buffer, buffer_len, type);
+  m_send_queue.emplace(std::move(packet), packet_len, sequence);
   return 0;
 }
 
@@ -284,12 +298,14 @@ const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
     // make sure the packet sequence is the same as current
     // sequence
     if (received_seq < m_sequence) {
+      std::cout << "Retransmitting\n";
       // retransmit
-      std::vector<UnackedPackets> packets_to_retransmit(
+      std::vector<SendPacket> packets_to_retransmit(
           m_unacked_packets.GetGreaterThan(received_seq));
       for (auto &packet : packets_to_retransmit) {
-        QueueRetransmit(packet.buffer, packet.buffer_len);
+        QueueRetransmit(packet.buffer, packet.buffer_len, packet.sequence);
       }
+    } else {
     }
     return RECEIVED_ACK;
   }
@@ -307,11 +323,6 @@ const uint32_t TBD::ProcessPacket(TBPacket &received_packet,
   if (retrieved_buffer)
     *retrieved_buffer = std::move(received_packet.payload);
   return RECEIVED_PACKET;
-}
-
-void TBD::QueueAck(uint32_t sequence, uint32_t length) {
-  Buffer empty_load;
-  QueueSend(empty_load, 0, PacketType::ACK);
 }
 
 void TBD::AckPacket(uint32_t sequence, uint32_t length) {
@@ -337,9 +348,7 @@ std::thread TBD::SetupSenderThread() {
             SendConstructed(packet_struct.buffer, packet_struct.buffer_len);
         if (status > 0) {
           // add packet to the ack map
-          this->m_unacked_packets.insert(
-              packet_struct.sequence,
-              {std::move(packet_struct.buffer), packet_struct.buffer_len});
+          this->m_unacked_packets.insert(packet_struct.sequence, packet_struct);
           total_tries += MAX_TRIES;
         }
       }
