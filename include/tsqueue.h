@@ -2,6 +2,7 @@
 // std queue but adds a mutex to safely
 // read and write to the container
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
@@ -24,6 +25,7 @@ public:
     std::unique_lock o_lock(other.m_mut);
 
     this->m_queue = std::move(other.m_queue);
+    this->m_stopped.store(other.m_stopped.load());
   }
   ~TSQueue() {
     // release lock and notify all to unblock any threads
@@ -39,6 +41,7 @@ public:
     std::unique_lock o_lock(other.m_mut);
 
     this->m_queue = std::move(other.m_queue);
+    this->m_stopped.store(other.m_stopped.load());
     return *this;
   }
 
@@ -144,9 +147,8 @@ public:
    */
   bool pop_wait(T *item) {
     LOCK(m_mut);
-    m_cond.wait(lock, [this]() { return !m_queue.empty(); });
-
-    if (!item)
+    m_cond.wait(lock, [this]() { return m_stopped || !m_queue.empty(); });
+    if (!item || m_stopped || m_queue.empty())
       return false;
     *item = std::move(m_queue.front());
     m_queue.pop();
@@ -166,7 +168,8 @@ public:
    */
   bool pop_wait_till(std::chrono::milliseconds ms, T *item) {
     LOCK(m_mut);
-    if (!m_cond.wait_for(lock, ms, [this]() { return !m_queue.empty(); })) {
+    if (!m_cond.wait_for(lock, ms,
+                         [this]() { return m_stopped || !m_queue.empty(); })) {
       return false;
     }
     if (!item) {
@@ -177,10 +180,16 @@ public:
     return item;
   }
 
+  void release_all_blocks() {
+    m_stopped = true;
+    m_cond.notify_all();
+  }
+
 private:
   std::queue<T, container> m_queue;
   std::mutex m_mut;
   std::condition_variable m_cond;
+  std::atomic_bool m_stopped;
 };
 
 } // namespace Hev

@@ -88,7 +88,7 @@ TBD TBD::Bind(const char *local_addr, const int local_port) {
 
 const int TBD::Listen(const char *peer_ip, const int peer_port) {
   if (SetUpPeerInfo(peer_ip, peer_port) != 0)
-    return -1;
+    return INVALID_PEER;
 
   bool acked = false;
   int times = 6;
@@ -115,13 +115,13 @@ const int TBD::Listen(const char *peer_ip, const int peer_port) {
     m_ping_thread = SetupPingThread();
     return 0;
   } else {
-    return -1;
+    return HANDSHAKE_FAIL;
   }
 }
 // bind socket, wait for SYN then send a SYN back and wait for the ACK
 const int TBD::Connect(const char *peer_ip, const int peer_port) {
   if (SetUpPeerInfo(peer_ip, peer_port) != 0)
-    return -1;
+    return INVALID_PEER;
 
   int status = 0;
   m_sequence = 1;
@@ -147,6 +147,9 @@ std::pair<Buffer, size_t> TBD::BuildAndUpdatePacket(Buffer &buffer,
 }
 
 const int TBD::Send(Buffer &buffer, const size_t buffer_len, uint8_t type) {
+  // not connected to a peer
+  if (!m_connected)
+    return SOCKET_CLOSED;
   return QueueSend(buffer, buffer_len, type);
 }
 
@@ -232,19 +235,31 @@ const int TBD::SendAndWait(Buffer &buffer, const size_t buffer_len,
   return status;
 }
 
-Buffer TBD::Receive() {
+const int TBD::Receive(Buffer *buffer) {
+  // not connected to a peer
+  if (!m_connected)
+    return SOCKET_CLOSED;
   Buffer payload;
   if (!m_received_queues.pop_wait(&payload))
-    return nullptr;
-  return std::move(payload);
+    return RECEIVE_ERROR;
+  if (!buffer)
+    return INVALID_PARAM;
+  *buffer = std::move(payload);
+  return 0;
 }
 
-Buffer TBD::Receive(std::chrono::milliseconds ms) {
+const int TBD::Receive(Buffer *buffer, std::chrono::milliseconds ms) {
 
+  // not connected to a peer
+  if (!m_connected)
+    return SOCKET_CLOSED;
   Buffer payload;
   if (!m_received_queues.pop_wait_till(ms, &payload))
-    return nullptr;
-  return std::move(payload);
+    return RECEIVE_ERROR;
+  if (!buffer)
+    return INVALID_PARAM;
+  *buffer = std::move(payload);
+  return 0;
 }
 
 const int TBD::RetrievePacket(TBPacket &packet, sockaddr_in *_received_addr) {
@@ -379,7 +394,7 @@ std::thread TBD::SetupReceiverThread() {
 std::thread TBD::SetupPingThread() {
   return std::thread([this]() {
     auto start = std::chrono::high_resolution_clock::now();
-    std::chrono::seconds timeout(120);
+    std::chrono::seconds timeout(60);
     while (this->m_connected) {
       if (this->m_ponged.load()) {
         auto now = std::chrono::high_resolution_clock::now();
@@ -391,6 +406,7 @@ std::thread TBD::SetupPingThread() {
         if (now - start > timeout) {
           // lost connection
           this->m_connected = false;
+          this->m_received_queues.release_all_blocks();
         }
       }
 

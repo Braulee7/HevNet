@@ -85,9 +85,13 @@ public:
    * that won't return until a message is received. If the connection
    * has not been set up prior to this call then the call will block
    * indefenitely.
-   * Returns: uint8_t[] containing the received payload
+   * params:
+   *  buffer: uint8_t[] containing the received payload
+   * returns:
+   *  status of the return, if it is not 0 then buffer is considered
+   *  undefined
    */
-  Buffer Receive();
+  const int Receive(Buffer *buffer);
   /* Receive:
    * param: ms - milliseconds to wait for a packet to be received.
    * Works just like Receive() but is a non blocking call. The call
@@ -95,7 +99,7 @@ public:
    * Return: uint8_t contianing the payload if a message was received
    * or nullptr if nothing was received.
    */
-  Buffer Receive(std::chrono::milliseconds ms);
+  const int Receive(Buffer *buffer, std::chrono::milliseconds ms);
 
 private:
   // private constructor. This class should be instantiated through the bind

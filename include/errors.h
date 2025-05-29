@@ -5,6 +5,8 @@ namespace Net {
 #define SOCKET_CLOSED 0x3001
 #define EMPTY_BUFFER 0x3002
 #define BIND_SOCKET_ERROR 0x3003
+#define HANDSHAKE_FAIL 0x3004
+#define INVALID_PEER 0x3005
 
 #define RECEIVE_ERROR 0x3100
 #define TIMEOUT 0x3101
@@ -15,5 +17,7 @@ namespace Net {
 #define RECEIVED_PACKET 0x3202
 #define RECEIVED_PING 0x3203
 #define RECEIVED_PONG 0x3204
+
+#define INVALID_PARAM 0x0001
 } // namespace Net
 } // namespace Hev
