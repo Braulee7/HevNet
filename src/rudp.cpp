@@ -18,8 +18,6 @@ TBD::TBD(const char *local_addr, const int local_port)
   m_local_addr.sin_addr.s_addr = INADDR_ANY;
   m_local_addr.sin_port = htons(local_port);
   m_local_addr.sin_family = AF_INET;
-
-  // TODO: set up sequencing variables
 }
 
 TBD::TBD(TBD &&other) {
@@ -57,10 +55,8 @@ TBD::~TBD() {
     m_sender_thread.join();
   if (m_receiver_thread.joinable())
     m_receiver_thread.join();
-  // detach ping thread so we're not waiting for
-  // it while it sleeps
   if (m_ping_thread.joinable())
-    m_ping_thread.detach();
+    m_ping_thread.join();
   // shouldn't overwrite the standard fds
   if (m_sock > 2)
     close(m_sock);
