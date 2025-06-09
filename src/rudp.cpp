@@ -51,12 +51,14 @@ TBD::TBD(TBD &&other) {
 TBD::~TBD() {
   // signal the threads to close
   m_connected.store(false);
+  // we detach here to non block the user
+  // valgrind throws error for this
   if (m_sender_thread.joinable())
-    m_sender_thread.join();
+    m_sender_thread.detach();
   if (m_receiver_thread.joinable())
-    m_receiver_thread.join();
+    m_receiver_thread.detach();
   if (m_ping_thread.joinable())
-    m_ping_thread.join();
+    m_ping_thread.detach();
   // shouldn't overwrite the standard fds
   if (m_sock > 2)
     close(m_sock);
